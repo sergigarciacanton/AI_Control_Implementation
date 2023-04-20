@@ -1,3 +1,5 @@
+import logging
+import sys
 import threading
 import socket
 import subprocess
@@ -9,6 +11,12 @@ import ctypes
 stop = False
 connections = []
 valid_ids = [1, 2, 3]
+
+logger = logging.getLogger('')
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.FileHandler('logs/control.log', mode='w', encoding='utf-8'))
+logger.addHandler(logging.StreamHandler(sys.stdout))
+logging.getLogger('pika').setLevel(logging.WARNING)
 
 
 class Connection:
@@ -39,7 +47,7 @@ def publish(key, message):
 
         channel.basic_publish(
             exchange='test', routing_key=key, body=message)
-        print("[I] Published message. Key: " + key + ". Message: " + message)
+        logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
     except KeyboardInterrupt:
         pass
     finally:
@@ -62,7 +70,7 @@ def serve_client(conn, ip, fec_id):
             if not data:
                 break  # If data is not received break
 
-            print("[I] From FEC " + str(ip) + ": " + str(data))
+            logger.info("[I] From FEC " + str(ip) + ": " + str(data))
             json_data = json.loads(data)
 
             if json_data['type'] == 'id':
@@ -99,7 +107,7 @@ def serve_client(conn, ip, fec_id):
                     connections[i].rtt = json_data['data']['rtt']
                     connections[i].connected_users = json_data['data']['connected_users']
                     conn.send(json.dumps(dict(res=200)).encode())  # Success
-                    notify_state_changes()
+                    notify_fec_state_changes()
         except TypeError:
             conn.send(json.dumps(dict(res=404)).encode())  # Error
         except json.decoder.JSONDecodeError:
@@ -117,11 +125,11 @@ def serve_client(conn, ip, fec_id):
     if found:
         connections.pop(i)
     conn.close()  # Close the connection
-    print('[I] FEC ' + str(ip) + ' disconnected.')
-    notify_state_changes()
+    logger.info('[I] FEC ' + str(ip) + ' disconnected.')
+    notify_fec_state_changes()
 
 
-def notify_state_changes():
+def notify_fec_state_changes():
     global listen_changes_thread
     fec_list = []
     for connection in connections:
@@ -154,7 +162,7 @@ def kill_thread(thread_id):
         raise ValueError("Thread ID " + str(thread_id) + " does not exist!")
     elif ret > 1:
         ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
-    print('[I] Successfully killed thread ' + str(thread_id))
+    logger.debug('[D] Successfully killed thread ' + str(thread_id))
 
 
 listen_changes_thread = threading.Thread(target=listen_fec_changes)
@@ -175,18 +183,18 @@ def main():
         server_socket.listen(1)
 
         current_id = 0
-        print('[I] Control server started')
+        logger.info('[I] Control server started')
 
         # Infinite loop listening for new connections
         while True:
             conn, address = server_socket.accept()  # Accept new connection
-            print("[I] New connection from: " + str(address))
+            logger.info("[I] New connection from: " + str(address))
             socket_thread = threading.Thread(target=serve_client, args=(conn, address[0], current_id))
             socket_thread.daemon = True
             socket_thread.start()
             current_id += 1
     except KeyboardInterrupt:
-        print('[!] Stopping Control server...')
+        logger.info('[!] Stopping Control server...')
         stop = True
         for connection in connections:
             connection.sock.close()
