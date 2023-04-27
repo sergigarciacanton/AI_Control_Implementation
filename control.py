@@ -7,36 +7,7 @@ import json
 import time
 import pika
 import ctypes
-
-stop = False
-connections = []
-valid_ids = [1, 2, 3]
-vnf_list = []
-
-logger = logging.getLogger('')
-logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.FileHandler('logs/control.log', mode='w', encoding='utf-8'))
-logger.addHandler(logging.StreamHandler(sys.stdout))
-logging.getLogger('pika').setLevel(logging.WARNING)
-
-
-class VNF:
-    def __init__(self, source, target, ram, gpu, rtt, bw, previous_node, current_node, fec_linked, user_id):
-        self.source = source
-        self.target = target
-        self.ram = ram
-        self.gpu = gpu
-        self.rtt = rtt
-        self.bw = bw
-        self.previous_node = previous_node
-        self.current_node = current_node
-        self.fec_linked = fec_linked
-        self.user_id = user_id
-
-    def __str__(self):
-        return f"Source/Target: {self.source}/{self.target} | GPU: {self.gpu} cores | RAM: {self.ram} GB | " \
-               f"BW: {self.bw} kbps | RTT: {self.rtt} ms | " \
-               f"Nodes (previous/current): {self.previous_node}/{self.current_node} | Linked to FEC: {self.fec_linked}"
+from colorlog import ColoredFormatter
 
 
 class Connection:
@@ -57,23 +28,18 @@ class Connection:
                f"Connected IDs: {self.connected_users}"
 
 
-def publish(key, message):
-    rabbit_conn = pika.BlockingConnection(
-        pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
-    try:
-        channel = rabbit_conn.channel()
+stop = False
+connections = []
+valid_ids = [1, 2, 3]
+vnf_list = []
 
-        channel.exchange_declare(exchange='test', exchange_type='direct')
-
-        channel.basic_publish(
-            exchange='test', routing_key=key, body=message)
-        logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        logger.exception(e)
-    finally:
-        rabbit_conn.close()
+logger = logging.getLogger('')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.FileHandler('logs/control.log', mode='w', encoding='utf-8'))
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(ColoredFormatter())
+logger.addHandler(stream_handler)
+logging.getLogger('pika').setLevel(logging.WARNING)
 
 
 def serve_client(conn, ip):
@@ -184,17 +150,6 @@ def serve_client(conn, ip):
     notify_fec_state_changes()
 
 
-def notify_vnf_changes():
-    global listen_vnf_changes_thread
-    global vnf_list
-    publish('vnf', json.dumps(vnf_list))
-    if listen_vnf_changes_thread.ident is not None:
-        kill_thread(listen_vnf_changes_thread.ident)
-    listen_vnf_changes_thread = threading.Thread(target=listen_vnf_changes)
-    listen_vnf_changes_thread.daemon = True
-    listen_vnf_changes_thread.start()
-
-
 def notify_fec_state_changes():
     global listen_fec_changes_thread
     fec_list = []
@@ -207,15 +162,6 @@ def notify_fec_state_changes():
     listen_fec_changes_thread = threading.Thread(target=listen_fec_changes)
     listen_fec_changes_thread.daemon = True
     listen_fec_changes_thread.start()
-
-
-def listen_vnf_changes():
-    global vnf_list
-    previous_state = vnf_list
-    while previous_state == vnf_list:
-        time.sleep(5)
-        if previous_state == vnf_list:
-            publish('vnf', json.dumps(vnf_list))
 
 
 def listen_fec_changes():
@@ -231,6 +177,51 @@ def listen_fec_changes():
             publish('fec', json.dumps(fec_list))
 
 
+listen_fec_changes_thread = threading.Thread(target=listen_fec_changes)
+
+
+def notify_vnf_changes():
+    global listen_vnf_changes_thread
+    global vnf_list
+    publish('vnf', json.dumps(vnf_list))
+    if listen_vnf_changes_thread.ident is not None:
+        kill_thread(listen_vnf_changes_thread.ident)
+    listen_vnf_changes_thread = threading.Thread(target=listen_vnf_changes)
+    listen_vnf_changes_thread.daemon = True
+    listen_vnf_changes_thread.start()
+
+
+def listen_vnf_changes():
+    global vnf_list
+    previous_state = vnf_list
+    while previous_state == vnf_list:
+        time.sleep(5)
+        if previous_state == vnf_list:
+            publish('vnf', json.dumps(vnf_list))
+
+
+listen_vnf_changes_thread = threading.Thread(target=listen_vnf_changes)
+
+
+def publish(key, message):
+    rabbit_conn = pika.BlockingConnection(
+        pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
+    try:
+        channel = rabbit_conn.channel()
+
+        channel.exchange_declare(exchange='test', exchange_type='direct')
+
+        channel.basic_publish(
+            exchange='test', routing_key=key, body=message)
+        logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logger.exception(e)
+    finally:
+        rabbit_conn.close()
+
+
 def kill_thread(thread_id):
     ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), ctypes.py_object(SystemExit))
     if ret == 0:
@@ -238,10 +229,6 @@ def kill_thread(thread_id):
     elif ret > 1:
         ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
     logger.debug('[D] Successfully killed thread ' + str(thread_id))
-
-
-listen_fec_changes_thread = threading.Thread(target=listen_fec_changes)
-listen_vnf_changes_thread = threading.Thread(target=listen_vnf_changes)
 
 
 def main():
