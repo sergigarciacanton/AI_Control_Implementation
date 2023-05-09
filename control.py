@@ -8,6 +8,7 @@ import time
 import pika
 import ctypes
 from colorlog import ColoredFormatter
+import configparser
 
 
 class Connection:
@@ -28,14 +29,18 @@ class Connection:
                f"Connected IDs: {self.connected_users}"
 
 
+config = configparser.ConfigParser()
+config.read("/home/user/Documents/Codigo/control.ini")
+general = config['general']
+
 stop = False
 connections = []
-valid_ids = [1, 2, 3]
+valid_ids = json.loads(general['valid_ids'])
 vnf_list = []
 
 logger = logging.getLogger('')
-logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.FileHandler('logs/control.log', mode='w', encoding='utf-8'))
+logger.setLevel(int(general['log_level']))
+logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter())
 logger.addHandler(stream_handler)
@@ -45,12 +50,15 @@ logging.getLogger('pika').setLevel(logging.WARNING)
 def serve_client(conn, ip):
     global listen_fec_changes_thread
     global vnf_list
-    fec_id = 0
-    if ip == '147.83.118.154':
-        fec_id = 1
-    elif ip == '147.83.118.82':
-        fec_id = 2
-    else:
+    fec_id = 1
+    fec_ips = config['fec']
+    while fec_id < len(fec_ips):
+        if fec_ips['fec_' + str(fec_id) + '_ip'] == ip:
+            logger.info('[I] FEC ' + ip + ' connected! (ID: ' + str(fec_id) + ')')
+            break
+        else:
+            fec_id += 1
+    if fec_id == len(fec_ips) + 1:
         logger.critical('[!] Unidentifiable FEC connected!')
     connections.append(Connection(fec_id,
                                   conn,
@@ -87,6 +95,8 @@ def serve_client(conn, ip):
                         conn.send(json.dumps(dict(res=403)).encode())
                 except TypeError:
                     conn.send(json.dumps(dict(res=404)).encode())
+                except ValueError:
+                    conn.send(json.dumps(dict(res=403)).encode())
             elif json_data['type'] == 'fec':
                 i = 0
                 while i < len(connections):
@@ -116,7 +126,6 @@ def serve_client(conn, ip):
                 else:
                     j = 0
                     while j < len(vnf_list):
-                        print(vnf_list[j])
                         if vnf_list[j]['user_id'] == json_data['data']['user_id']:
                             break
                         else:
@@ -204,15 +213,17 @@ listen_vnf_changes_thread = threading.Thread(target=listen_vnf_changes)
 
 
 def publish(key, message):
-    rabbit_conn = pika.BlockingConnection(
-        pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
+    rabbit_conn = pika.BlockingConnection(pika.ConnectionParameters(general['control_ip'],
+                                                                    credentials=pika.PlainCredentials(
+                                                                        general['control_username'],
+                                                                        general['control_password'])))
     try:
         channel = rabbit_conn.channel()
 
-        channel.exchange_declare(exchange='test', exchange_type='direct')
+        channel.exchange_declare(exchange=general['control_exchange_name'], exchange_type='direct')
 
         channel.basic_publish(
-            exchange='test', routing_key=key, body=message)
+            exchange=general['control_exchange_name'], routing_key=key, body=message)
         logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
     except KeyboardInterrupt:
         pass
@@ -236,8 +247,8 @@ def main():
         global stop
         stop = False
         # Server's IP and port
-        host = '147.83.118.153'
-        port = 5000
+        host = general['control_ip']
+        port = int(general['server_port'])
 
         server_socket = socket.socket()  # Create socket
         server_socket.bind((host, port))  # Bind IP address and port together
@@ -250,7 +261,6 @@ def main():
         # Infinite loop listening for new connections
         while True:
             conn, address = server_socket.accept()  # Accept new connection
-            logger.info("[I] New connection from: " + str(address))
             socket_thread = threading.Thread(target=serve_client, args=(conn, address[0]))
             socket_thread.daemon = True
             socket_thread.start()
