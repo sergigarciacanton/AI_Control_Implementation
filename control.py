@@ -12,7 +12,7 @@ import configparser
 
 
 class Connection:
-    def __init__(self, fec_id, sock, mac, ip, gpu, ram, bw, rtt, connected_users):
+    def __init__(self, fec_id, sock, mac, ip, gpu, ram, bw, connected_users):
         self.fec_id = fec_id
         self.sock = sock
         self.mac = mac
@@ -20,12 +20,11 @@ class Connection:
         self.gpu = gpu
         self.ram = ram
         self.bw = bw
-        self.rtt = rtt
         self.connected_users = connected_users
 
     def __str__(self):
         return f"FEC ID: {self.fec_id} | Socket ID: {self.sock} | MAC: {self.mac} | IP: {self.ip} | " \
-               f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | RTT: {self.rtt} ms | " \
+               f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | " \
                f"Connected IDs: {self.connected_users}"
 
 
@@ -65,7 +64,7 @@ def serve_client(conn, ip):
                                   subprocess.check_output(['arp', '-n', ip]).decode().split('\n')[
                                       1].split()[2],
                                   ip,
-                                  0, 0.0, 0.0, 0, []))
+                                  0, 0.0, 0.0, []))
     while True:
         try:
             if stop:
@@ -110,7 +109,6 @@ def serve_client(conn, ip):
                     connections[i].ram = json_data['data']['ram']
                     connections[i].gpu = json_data['data']['gpu']
                     connections[i].bw = json_data['data']['bw']
-                    connections[i].rtt = json_data['data']['rtt']
                     connections[i].connected_users = json_data['data']['connected_users']
                     conn.send(json.dumps(dict(res=200)).encode())  # Success
                     notify_fec_state_changes()
@@ -164,7 +162,7 @@ def notify_fec_state_changes():
     fec_list = []
     for connection in connections:
         fec_list.append(dict(fec_id=connection.fec_id, gpu=connection.gpu, ram=connection.ram,
-                             bw=connection.bw, rtt=connection.rtt, connected_users=connection.connected_users))
+                             bw=connection.bw, connected_users=connection.connected_users))
     publish('fec', json.dumps(fec_list))
     if listen_fec_changes_thread.ident is not None:
         kill_thread(listen_fec_changes_thread.ident)
@@ -182,7 +180,7 @@ def listen_fec_changes():
             fec_list = []
             for connection in connections:
                 fec_list.append(dict(fec_id=connection.fec_id, gpu=connection.gpu, ram=connection.ram,
-                                     bw=connection.bw, rtt=connection.rtt, connected_users=connection.connected_users))
+                                     bw=connection.bw, connected_users=connection.connected_users))
             publish('fec', json.dumps(fec_list))
 
 
