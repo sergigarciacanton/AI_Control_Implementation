@@ -2,7 +2,6 @@ import logging
 import sys
 import threading
 import socket
-import subprocess
 import json
 import time
 import pika
@@ -12,10 +11,9 @@ import configparser
 
 
 class Connection:
-    def __init__(self, fec_id, sock, mac, ip, gpu, ram, bw, connected_users):
+    def __init__(self, fec_id, sock, ip, gpu, ram, bw, connected_users):
         self.fec_id = fec_id
         self.sock = sock
-        self.mac = mac
         self.ip = ip
         self.gpu = gpu
         self.ram = ram
@@ -23,13 +21,13 @@ class Connection:
         self.connected_users = connected_users
 
     def __str__(self):
-        return f"FEC ID: {self.fec_id} | Socket ID: {self.sock} | MAC: {self.mac} | IP: {self.ip} | " \
+        return f"FEC ID: {self.fec_id} | Socket ID: {self.sock} | IP: {self.ip} | " \
                f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | " \
                f"Connected IDs: {self.connected_users}"
 
 
 config = configparser.ConfigParser()
-config.read("/home/user/Documents/Codigo/control.ini")
+config.read("control_outdoor.ini")
 general = config['general']
 
 stop = False
@@ -41,7 +39,7 @@ logger = logging.getLogger('')
 logger.setLevel(int(general['log_level']))
 logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
 stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(ColoredFormatter())
+stream_handler.setFormatter(ColoredFormatter('%(log_color)s%(message)s'))
 logger.addHandler(stream_handler)
 logging.getLogger('pika').setLevel(logging.WARNING)
 
@@ -59,12 +57,7 @@ def serve_client(conn, ip):
             fec_id += 1
     if fec_id == len(fec_ips) + 1:
         logger.critical('[!] Unidentifiable FEC connected!')
-    connections.append(Connection(fec_id,
-                                  conn,
-                                  subprocess.check_output(['arp', '-n', ip]).decode().split('\n')[
-                                      1].split()[2],
-                                  ip,
-                                  0, 0.0, 0.0, []))
+    connections.append(Connection(fec_id, conn, ip, 0, 0.0, 0.0, []))
     while True:
         try:
             if stop:
