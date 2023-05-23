@@ -47,17 +47,6 @@ logging.getLogger('pika').setLevel(logging.WARNING)
 def serve_client(conn, ip):
     global listen_fec_changes_thread
     global vnf_list
-    fec_id = 1
-    fec_ips = config['fec']
-    while fec_id < len(fec_ips):
-        if fec_ips['fec_' + str(fec_id) + '_ip'] == ip:
-            logger.info('[I] FEC ' + ip + ' connected! (ID: ' + str(fec_id) + ')')
-            break
-        else:
-            fec_id += 1
-    if fec_id == len(fec_ips) + 1:
-        logger.critical('[!] Unidentifiable FEC connected!')
-    connections.append(Connection(fec_id, conn, ip, 0, 0.0, 0.0, []))
     while True:
         try:
             if stop:
@@ -70,15 +59,22 @@ def serve_client(conn, ip):
             json_data = json.loads(data)
 
             if json_data['type'] == 'id':
-                i = 0
-                while i < len(connections):
-                    if conn == connections[i].sock:
-                        conn.send(json.dumps(dict(res=200, id=connections[i].fec_id)).encode())  # Return id
+                print(ip)
+                print(json_data)
+                fec_id = 1
+                fec_ips = config['fec']
+                while fec_id < len(fec_ips):
+                    if fec_ips['fec_' + str(fec_id) + '_ip'] == json_data['ip']:
+                        logger.info('[I] FEC ' + json_data['ip'] + ' connected! (ID: ' + str(fec_id) + ')')
                         break
                     else:
-                        i += 1
-                if i == len(connections):
-                    conn.send(json.dumps(dict(res=500)).encode())  # Connection not found
+                        fec_id += 1
+                if fec_id == len(fec_ips) + 1:
+                    logger.warning('[!] Unidentifiable FEC connected!')
+                    conn.send(json.dumps(dict(res=403)).encode())  # Return id
+                else:
+                    connections.append(Connection(fec_id, conn, json_data['ip'], 0, 0.0, 0.0, []))
+                    conn.send(json.dumps(dict(res=200, id=fec_id)).encode())  # Return id
             elif json_data['type'] == 'auth':
                 try:
                     if valid_ids.index(json_data['user_id']) >= 0:
