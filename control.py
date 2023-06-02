@@ -55,15 +55,13 @@ def serve_client(conn, ip):
             if not data:
                 break  # If data is not received break
 
-            logger.info("[I] From FEC " + str(ip) + ": " + str(data))
+            logger.info("[I] From FEC: " + str(data))
             json_data = json.loads(data)
 
             if json_data['type'] == 'id':
-                print(ip)
-                print(json_data)
                 fec_id = 1
                 fec_ips = config['fec']
-                while fec_id < len(fec_ips):
+                while fec_id < len(fec_ips) + 1:
                     if fec_ips['fec_' + str(fec_id) + '_ip'] == json_data['ip']:
                         logger.info('[I] FEC ' + json_data['ip'] + ' connected! (ID: ' + str(fec_id) + ')')
                         break
