@@ -11,19 +11,20 @@ import configparser
 
 
 class Connection:
-    def __init__(self, fec_id, sock, ip, gpu, ram, bw, connected_users):
+    def __init__(self, fec_id, sock, ip, gpu, ram, bw, mac, connected_users):
         self.fec_id = fec_id
         self.sock = sock
         self.ip = ip
         self.gpu = gpu
         self.ram = ram
         self.bw = bw
+        self.mac = mac
         self.connected_users = connected_users
 
     def __str__(self):
         return f"FEC ID: {self.fec_id} | Socket ID: {self.sock} | IP: {self.ip} | " \
                f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | " \
-               f"Connected IDs: {self.connected_users}"
+               f"MAC: {self.mac} | Connected IDs: {self.connected_users}"
 
 
 config = configparser.ConfigParser()
@@ -74,7 +75,7 @@ def serve_client(conn, ip):
                     logger.warning('[!] Unidentifiable FEC connected!')
                     conn.send(json.dumps(dict(res=403)).encode())  # Return id
                 else:
-                    connections.append(Connection(fec_id, conn, json_data['ip'], 0, 0.0, 0.0, []))
+                    connections.append(Connection(fec_id, conn, json_data['ip'], 0, 0.0, 0.0, json_data['mac'], []))
                     conn.send(json.dumps(dict(res=200, id=fec_id)).encode())  # Return id
             elif json_data['type'] == 'auth':
                 try:
@@ -152,7 +153,7 @@ def notify_fec_state_changes():
     fec_list = []
     for connection in connections:
         fec_list.append(dict(fec_id=connection.fec_id, gpu=connection.gpu, ram=connection.ram,
-                             bw=connection.bw, connected_users=connection.connected_users))
+                             bw=connection.bw, mac=connection.mac, connected_users=connection.connected_users))
     publish('fec', json.dumps(fec_list))
     if listen_fec_changes_thread.ident is not None:
         kill_thread(listen_fec_changes_thread.ident)
@@ -170,7 +171,7 @@ def listen_fec_changes():
             fec_list = []
             for connection in connections:
                 fec_list.append(dict(fec_id=connection.fec_id, gpu=connection.gpu, ram=connection.ram,
-                                     bw=connection.bw, connected_users=connection.connected_users))
+                                     bw=connection.bw, mac=connection.mac, connected_users=connection.connected_users))
             publish('fec', json.dumps(fec_list))
 
 
