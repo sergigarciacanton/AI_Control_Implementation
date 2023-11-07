@@ -28,7 +28,7 @@ class Connection:
 
 
 config = configparser.ConfigParser()
-config.read("control_outdoor.ini")
+config.read("control.ini")
 general = config['general']
 
 stop = False
@@ -63,9 +63,9 @@ def serve_client(conn, ip):
             json_data = json.loads(data)
 
             if json_data['type'] == 'id':
-                fec_id = 1
+                fec_id = 0
                 fec_ips = config['fec']
-                while fec_id < len(fec_ips) + 1:
+                while fec_id < len(fec_ips):
                     if fec_ips['fec_' + str(fec_id) + '_ip'] == json_data['ip']:
                         logger.info('[I] FEC ' + json_data['ip'] + ' connected! (ID: ' + str(fec_id) + ')')
                         break
