@@ -122,10 +122,16 @@ class ControlServer:
 
     def notify_fec_state_changes(self):
         fec_list = []
-        for fec in self.fec_list:
-            fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                 bw=fec['bw'], mac=fec['mac'],
-                                 connected_users=fec['connected_users']))
+        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+            for fec in self.fec_list:
+                fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
+                                     bw=fec['bw'], mac=fec['mac'],
+                                     connected_users=fec['connected_users']))
+        else:
+            for fec in self.fec_list:
+                fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
+                                     bw=fec['bw'], ip=fec['ip'],
+                                     connected_users=fec['connected_users']))
         self.publish('fec', json.dumps(fec_list))
         if self.listen_fec_changes_thread.ident is not None:
             self.kill_thread(self.listen_fec_changes_thread.ident)
