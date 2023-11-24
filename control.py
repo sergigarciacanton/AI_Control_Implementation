@@ -133,11 +133,12 @@ class ControlServer:
                                      bw=fec['bw'], ip=fec['ip'],
                                      connected_users=fec['connected_users']))
         self.publish('fec', json.dumps(fec_list))
-        if self.listen_fec_changes_thread.ident is not None:
-            self.kill_thread(self.listen_fec_changes_thread.ident)
-        self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
-        self.listen_fec_changes_thread.daemon = True
-        self.listen_fec_changes_thread.start()
+        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+            if self.listen_fec_changes_thread.ident is not None:
+                self.kill_thread(self.listen_fec_changes_thread.ident)
+            self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
+            self.listen_fec_changes_thread.daemon = True
+            self.listen_fec_changes_thread.start()
 
     def listen_fec_changes(self):
         previous_state = self.fec_list
@@ -145,19 +146,27 @@ class ControlServer:
             time.sleep(5)
             if previous_state == self.fec_list:
                 fec_list = []
-                for fec in self.fec_list:
-                    fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                         bw=fec['bw'], mac=fec['mac'],
-                                         connected_users=fec['connected_users']))
-                self.publish('fec', json.dumps(fec_list))
+                if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                    for fec in self.fec_list:
+                        fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
+                                             bw=fec['bw'], mac=fec['mac'],
+                                             connected_users=fec['connected_users']))
+                    self.publish('fec', json.dumps(fec_list))
+                else:
+                    for fec in self.fec_list:
+                        fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
+                                             bw=fec['bw'], ip=fec['ip'],
+                                             connected_users=fec['connected_users']))
+                    self.publish('fec', json.dumps(fec_list))
 
     def notify_vnf_changes(self):
         self.publish('vnf', json.dumps(self.vnf_list))
-        if self.listen_vnf_changes_thread.ident is not None:
-            self.kill_thread(self.listen_vnf_changes_thread.ident)
-        self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
-        self.listen_vnf_changes_thread.daemon = True
-        self.listen_vnf_changes_thread.start()
+        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+            if self.listen_vnf_changes_thread.ident is not None:
+                self.kill_thread(self.listen_vnf_changes_thread.ident)
+            self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
+            self.listen_vnf_changes_thread.daemon = True
+            self.listen_vnf_changes_thread.start()
 
     def listen_vnf_changes(self):
         previous_state = self.vnf_list
