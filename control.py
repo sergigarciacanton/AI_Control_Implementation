@@ -12,8 +12,8 @@ import configparser
 
 class ControlServer:
     def __init__(self, valid_ids):
-        self.fec_list = []
-        self.vnf_list = []
+        self.fec_list = dict()
+        self.vnf_list = dict()
         self.valid_ids = valid_ids
         self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
         self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
@@ -49,8 +49,8 @@ class ControlServer:
                         logger.warning('[!] Unidentifiable FEC connected!')
                         conn.send(json.dumps(dict(res=403)).encode())  # Return id
                     else:
-                        self.fec_list.append(dict(fec_id=fec_id, sock=conn, ip=json_data['ip'], gpu=0, ram=0.0, bw=0.0,
-                                                  mac=json_data['mac'], connected_users=[]))
+                        self.fec_list[str(fec_id)] = {"sock": conn, "ip": json_data['ip'], "gpu": 0, "ram": 0.0,
+                                                      "bw": 0.0, "mac": json_data['mac'], "connected_users": []}
                         conn.send(json.dumps(dict(res=200, id=fec_id)).encode())  # Return id
                 elif json_data['type'] == 'auth':
                     try:
@@ -67,57 +67,23 @@ class ControlServer:
                             '[!] ValueError when authentication of CAV: ' + str(e) + '. json_data = ' + str(json_data))
                         conn.send(json.dumps(dict(res=403)).encode())
                 elif json_data['type'] == 'fec':
-                    i = 0
-                    while i < len(self.fec_list):
-                        if conn == self.fec_list[i]['sock']:
-                            break
-                        else:
-                            i += 1
-                    if i == len(self.fec_list):
-                        logger.error(
-                            '[!] FEC not found when sending FEC messages. json_data = ' + str(json_data) + ', '
-                                                                                                           'fec_list '
-                                                                                                           '= ' +
-                            str(self.fec_list))
-                        conn.send(json.dumps(dict(res=500)).encode())  # FEC not found
-                    else:
-                        self.fec_list[i]['ram'] = json_data['data']['ram']
-                        self.fec_list[i]['gpu'] = json_data['data']['gpu']
-                        self.fec_list[i]['bw'] = json_data['data']['bw']
-                        self.fec_list[i]['connected_users'] = json_data['data']['connected_users']
-                        conn.send(json.dumps(dict(res=200)).encode())  # Success
-                        self.notify_fec_state_changes()
+                    self.fec_list[str(fec_id)]['ram'] = json_data['data']['ram']
+                    self.fec_list[str(fec_id)]['gpu'] = json_data['data']['gpu']
+                    self.fec_list[str(fec_id)]['bw'] = json_data['data']['bw']
+                    self.fec_list[str(fec_id)]['connected_users'] = json_data['data']['connected_users']
+                    conn.send(json.dumps(dict(res=200)).encode())  # Success
+                    self.notify_fec_state_changes()
                 elif json_data['type'] == 'vnf':
-                    i = 0
-                    while i < len(self.fec_list):
-                        if conn == self.fec_list[i]['sock']:
-                            break
-                        else:
-                            i += 1
-                    if i == len(self.fec_list):
-                        logger.error(
-                            '[!] FEC not found when receiving VNF message. json_data = ' + str(json_data) + ', '
-                                                                                                            'fec_list'
-                                                                                                            ' = ' +
-                            str(self.fec_list))
-                        conn.send(json.dumps(dict(res=404)).encode())  # FEC not found
+                    if str(json_data['user_id']) not in self.vnf_list:
+                        self.vnf_list[str(json_data['user_id'])] = json_data['data']
+                    elif json_data['data']['target'] == json_data['data']['current_node']:
+                        self.vnf_list.pop(str(json_data['user_id']))
                     else:
-                        j = 0
-                        while j < len(self.vnf_list):
-                            if self.vnf_list[j]['user_id'] == json_data['data']['user_id']:
-                                break
-                            else:
-                                j += 1
-                        if j == len(self.vnf_list):
-                            self.vnf_list.append(json_data['data'])
-                        elif json_data['data']['target'] == json_data['data']['current_node']:
-                            self.vnf_list.pop(j)
-                        else:
-                            self.vnf_list[j] = json_data['data']
-                        conn.send(json.dumps(dict(res=200)).encode())  # Success
-                        self.notify_vnf_changes()
+                        self.vnf_list[str(json_data['user_id'])] = json_data['data']
+                    conn.send(json.dumps(dict(res=200)).encode())  # Success
+                    self.notify_vnf_changes()
             except TypeError as e:
-                logger.error('[!] TypeError in control!' + str(e))
+                logger.error('[!] TypeError in control! ' + str(e))
                 conn.send(json.dumps(dict(res=404)).encode())  # Error
             except json.decoder.JSONDecodeError as e:
                 logger.error('[!] JSONDecodeError in control: ' + str(e) + '. data = ' + str(data) + '. json_data = '
@@ -126,32 +92,24 @@ class ControlServer:
             except Exception as e:
                 logger.exception(e)
 
-        found = False
-        i = 0
-        while not found and i < len(self.fec_list):
-            if self.fec_list[i]['sock'] == conn:
-                found = True
-            else:
-                i += 1
-        if found:
-            self.fec_list.pop(i)
+        self.fec_list.pop(str(fec_id))
         conn.close()  # Close the connection
         logger.info('[I] FEC ' + str(fec_id) + ' disconnected.')
         self.notify_fec_state_changes()
 
     def notify_fec_state_changes(self):
-        fec_list = []
+        list_to_send = dict()
         if general['training_if'] != 'y' and general['training_if'] != 'Y':
-            for fec in self.fec_list:
-                fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                     bw=fec['bw'], mac=fec['mac'],
-                                     connected_users=fec['connected_users']))
+            for fec in self.fec_list.keys():
+                list_to_send[fec] = dict(self.fec_list[fec])
+                del list_to_send[fec]['sock']
+                del list_to_send[fec]['ip']
         else:
-            for fec in self.fec_list:
-                fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                     bw=fec['bw'], ip=fec['ip'],
-                                     connected_users=fec['connected_users']))
-        self.publish('fec', json.dumps(fec_list))
+            for fec in self.fec_list.keys():
+                list_to_send[fec] = dict(self.fec_list[fec])
+                del list_to_send[fec]['sock']
+                del list_to_send[fec]['mac']
+        self.publish('fec', json.dumps(list_to_send))
         if general['training_if'] != 'y' and general['training_if'] != 'Y':
             if self.listen_fec_changes_thread.ident is not None:
                 self.kill_thread(self.listen_fec_changes_thread.ident)
@@ -164,19 +122,17 @@ class ControlServer:
         while previous_state == self.fec_list:
             time.sleep(5)
             if previous_state == self.fec_list:
-                fec_list = []
+                list_to_send = self.fec_list.copy()
                 if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                    for fec in self.fec_list:
-                        fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                             bw=fec['bw'], mac=fec['mac'],
-                                             connected_users=fec['connected_users']))
-                    self.publish('fec', json.dumps(fec_list))
+                    for fec in self.fec_list.keys():
+                        del list_to_send[fec]['sock']
+                        del list_to_send[fec]['ip']
+                    self.publish('fec', json.dumps(list_to_send))
                 else:
-                    for fec in self.fec_list:
-                        fec_list.append(dict(fec_id=fec['fec_id'], gpu=fec['gpu'], ram=fec['ram'],
-                                             bw=fec['bw'], ip=fec['ip'],
-                                             connected_users=fec['connected_users']))
-                    self.publish('fec', json.dumps(fec_list))
+                    for fec in self.fec_list.keys():
+                        del list_to_send[fec]['sock']
+                        del list_to_send[fec]['mac']
+                    self.publish('fec', json.dumps(list_to_send))
 
     def notify_vnf_changes(self):
         self.publish('vnf', json.dumps(self.vnf_list))
