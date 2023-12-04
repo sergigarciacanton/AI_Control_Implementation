@@ -21,6 +21,8 @@ class ControlServer:
 
     def serve_client(self, conn, ip):
         fec_id = None
+        data = None
+        json_data = None
         while True:
             try:
                 if stop:
@@ -56,9 +58,13 @@ class ControlServer:
                             conn.send(json.dumps(dict(res=200)).encode())
                         else:
                             conn.send(json.dumps(dict(res=403)).encode())
-                    except TypeError:
+                    except TypeError as e:
+                        logger.error(
+                            '[!] TypeError when authentication of CAV: ' + str(e) + '. json_data = ' + str(json_data))
                         conn.send(json.dumps(dict(res=404)).encode())
-                    except ValueError:
+                    except ValueError as e:
+                        logger.error(
+                            '[!] ValueError when authentication of CAV: ' + str(e) + '. json_data = ' + str(json_data))
                         conn.send(json.dumps(dict(res=403)).encode())
                 elif json_data['type'] == 'fec':
                     i = 0
@@ -68,6 +74,11 @@ class ControlServer:
                         else:
                             i += 1
                     if i == len(self.fec_list):
+                        logger.error(
+                            '[!] FEC not found when sending FEC messages. json_data = ' + str(json_data) + ', '
+                                                                                                           'fec_list '
+                                                                                                           '= ' +
+                            str(self.fec_list))
                         conn.send(json.dumps(dict(res=500)).encode())  # FEC not found
                     else:
                         self.fec_list[i]['ram'] = json_data['data']['ram']
@@ -84,6 +95,11 @@ class ControlServer:
                         else:
                             i += 1
                     if i == len(self.fec_list):
+                        logger.error(
+                            '[!] FEC not found when receiving VNF message. json_data = ' + str(json_data) + ', '
+                                                                                                            'fec_list'
+                                                                                                            ' = ' +
+                            str(self.fec_list))
                         conn.send(json.dumps(dict(res=404)).encode())  # FEC not found
                     else:
                         j = 0
@@ -100,9 +116,12 @@ class ControlServer:
                             self.vnf_list[j] = json_data['data']
                         conn.send(json.dumps(dict(res=200)).encode())  # Success
                         self.notify_vnf_changes()
-            except TypeError:
+            except TypeError as e:
+                logger.error('[!] TypeError in control!' + str(e))
                 conn.send(json.dumps(dict(res=404)).encode())  # Error
-            except json.decoder.JSONDecodeError:
+            except json.decoder.JSONDecodeError as e:
+                logger.error('[!] JSONDecodeError in control: ' + str(e) + '. data = ' + str(data) + '. json_data = '
+                             + str(json_data))
                 conn.send(json.dumps(dict(res=404)).encode())  # Error
             except Exception as e:
                 logger.exception(e)
