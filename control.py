@@ -193,7 +193,7 @@ class ControlServer:
             # Configure how many client the server can listen simultaneously
             server_socket.listen(1)
 
-            logger.info('[I] Control server started')
+            logger.warning('[I] Control server started')
 
             # Infinite loop listening for new connections
             while True:
@@ -202,7 +202,7 @@ class ControlServer:
                 socket_thread.daemon = True
                 socket_thread.start()
         except KeyboardInterrupt:
-            logger.info('[!] Stopping Control server...')
+            logger.warning('[!] Stopping Control server...')
             stop = True
             for fec in self.fec_list:
                 fec['sock'].close()
