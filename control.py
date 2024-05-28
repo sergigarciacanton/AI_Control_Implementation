@@ -19,7 +19,7 @@ class ControlServer:
         self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
         self.run_control()
 
-    def serve_client(self, conn, ip):
+    def serve_client(self, conn):
         fec_id = None
         data = None
         json_data = None
@@ -49,8 +49,8 @@ class ControlServer:
                         logger.warning('[!] Unidentifiable FEC connected!')
                         conn.send(json.dumps(dict(res=403)).encode())  # Return id
                     else:
-                        self.fec_list[str(fec_id)] = {"sock": conn, "ip": json_data['ip'], "gpu": 0, "ram": 0.0,
-                                                      "bw": 0.0, "mac": json_data['mac'], "connected_users": []}
+                        self.fec_list[fec_id] = {"sock": conn, "ip": json_data['ip'], "gpu": 0, "ram": 0.0,
+                                                      "bw": 0.0, "connected_users": []}
                         conn.send(json.dumps(dict(res=200, id=fec_id)).encode())  # Return id
                 elif json_data['type'] == 'auth':
                     try:
@@ -67,19 +67,19 @@ class ControlServer:
                             '[!] ValueError when authentication of CAV: ' + str(e) + '. json_data = ' + str(json_data))
                         conn.send(json.dumps(dict(res=403)).encode())
                 elif json_data['type'] == 'fec':
-                    self.fec_list[str(fec_id)]['ram'] = json_data['data']['ram']
-                    self.fec_list[str(fec_id)]['gpu'] = json_data['data']['gpu']
-                    self.fec_list[str(fec_id)]['bw'] = json_data['data']['bw']
-                    self.fec_list[str(fec_id)]['connected_users'] = json_data['data']['connected_users']
+                    self.fec_list[fec_id]['ram'] = json_data['data']['ram']
+                    self.fec_list[fec_id]['gpu'] = json_data['data']['gpu']
+                    self.fec_list[fec_id]['bw'] = json_data['data']['bw']
+                    self.fec_list[fec_id]['connected_users'] = json_data['data']['connected_users']
                     conn.send(json.dumps(dict(res=200)).encode())  # Success
                     self.notify_fec_state_changes()
                 elif json_data['type'] == 'vnf':
-                    if str(json_data['user_id']) not in self.vnf_list:
-                        self.vnf_list[str(json_data['user_id'])] = json_data['data']
+                    if json_data['user_id'] not in self.vnf_list:
+                        self.vnf_list[json_data['user_id']] = json_data['data']
                     elif json_data['data']['target'] == json_data['data']['current_node']:
-                        self.vnf_list.pop(str(json_data['user_id']))
+                        self.vnf_list.pop(json_data['user_id'])
                     else:
-                        self.vnf_list[str(json_data['user_id'])] = json_data['data']
+                        self.vnf_list[json_data['user_id']] = json_data['data']
                     conn.send(json.dumps(dict(res=200)).encode())  # Success
                     self.notify_vnf_changes()
             except TypeError as e:
@@ -92,14 +92,14 @@ class ControlServer:
             except Exception as e:
                 logger.exception(e)
 
-        self.fec_list.pop(str(fec_id))
+        self.fec_list.pop(fec_id)
         conn.close()  # Close the connection
         logger.info('[I] FEC ' + str(fec_id) + ' disconnected.')
         self.notify_fec_state_changes()
 
     def notify_fec_state_changes(self):
         list_to_send = dict()
-        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+        if general['wifi_if'] != 'n' and general['wifi_if'] != 'N':
             for fec in self.fec_list.keys():
                 list_to_send[fec] = dict(self.fec_list[fec])
                 del list_to_send[fec]['sock']
@@ -108,9 +108,8 @@ class ControlServer:
             for fec in self.fec_list.keys():
                 list_to_send[fec] = dict(self.fec_list[fec])
                 del list_to_send[fec]['sock']
-                del list_to_send[fec]['mac']
         self.publish('fec', json.dumps(list_to_send))
-        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+        if general['retransmit_if'] != 'n' and general['retransmit_if'] != 'N':
             if self.listen_fec_changes_thread.ident is not None:
                 self.kill_thread(self.listen_fec_changes_thread.ident)
             self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
@@ -123,7 +122,7 @@ class ControlServer:
             time.sleep(5)
             if previous_state == self.fec_list:
                 list_to_send = self.fec_list.copy()
-                if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                if general['wifi_if'] != 'n' and general['wifi_if'] != 'N':
                     for fec in self.fec_list.keys():
                         del list_to_send[fec]['sock']
                         del list_to_send[fec]['ip']
@@ -131,12 +130,11 @@ class ControlServer:
                 else:
                     for fec in self.fec_list.keys():
                         del list_to_send[fec]['sock']
-                        del list_to_send[fec]['mac']
                     self.publish('fec', json.dumps(list_to_send))
 
     def notify_vnf_changes(self):
         self.publish('vnf', json.dumps(self.vnf_list))
-        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+        if general['retransmit_if'] != 'n' and general['retransmit_if'] != 'N':
             if self.listen_vnf_changes_thread.ident is not None:
                 self.kill_thread(self.listen_vnf_changes_thread.ident)
             self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
@@ -198,7 +196,7 @@ class ControlServer:
             # Infinite loop listening for new connections
             while True:
                 conn, address = server_socket.accept()  # Accept new connection
-                socket_thread = threading.Thread(target=self.serve_client, args=(conn, address[0]))
+                socket_thread = threading.Thread(target=self.serve_client, args=(conn,))
                 socket_thread.daemon = True
                 socket_thread.start()
         except KeyboardInterrupt:
