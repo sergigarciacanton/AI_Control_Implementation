@@ -9,7 +9,6 @@ import ctypes
 from colorlog import ColoredFormatter
 import configparser
 
-
 class ControlServer:
     def __init__(self, valid_ids):
         self.fec_list = dict()
@@ -55,6 +54,7 @@ class ControlServer:
                 elif json_data['type'] == 'auth':
                     try:
                         if self.valid_ids.index(json_data['user_id']) >= 0:
+                            self.update_prometheus_target(self.fec_list[fec_id]['ip'] + ':9000')
                             conn.send(json.dumps(dict(res=200)).encode())
                         else:
                             conn.send(json.dumps(dict(res=403)).encode())
@@ -208,6 +208,15 @@ class ControlServer:
             logger.critical('[!] Error when binding address and port for server! Stopping...')
         except Exception as e:
             logger.exception(e)
+
+    def update_prometheus_target(self, cav_ip):
+        print("Canvi Prometheus a " + cav_ip)
+        with open('/home/user/Downloads/prometheus-2.51.2.linux-amd64/targets.json', 'r') as json_file:
+            prom_target = json.load(json_file)
+        prom_target[0]["targets"] = [cav_ip]
+        with open('/home/user/Downloads/prometheus-2.51.2.linux-amd64/targets.json', 'w') as json_file:
+            json.dump(prom_target, json_file, indent=4)
+        json_file.close()
 
 
 if __name__ == '__main__':
