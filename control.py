@@ -99,15 +99,9 @@ class ControlServer:
 
     def notify_fec_state_changes(self):
         list_to_send = dict()
-        if general['wifi_if'] != 'n' and general['wifi_if'] != 'N':
-            for fec in self.fec_list.keys():
-                list_to_send[fec] = dict(self.fec_list[fec])
-                del list_to_send[fec]['sock']
-                del list_to_send[fec]['ip']
-        else:
-            for fec in self.fec_list.keys():
-                list_to_send[fec] = dict(self.fec_list[fec])
-                del list_to_send[fec]['sock']
+        for fec in self.fec_list.keys():
+            list_to_send[fec] = dict(self.fec_list[fec])
+            del list_to_send[fec]['sock']
         self.publish('fec', json.dumps(list_to_send))
         if general['retransmit_if'] != 'n' and general['retransmit_if'] != 'N':
             if self.listen_fec_changes_thread.ident is not None:
