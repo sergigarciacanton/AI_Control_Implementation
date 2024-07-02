@@ -16,7 +16,9 @@ class ControlServer:
         self.valid_ids = valid_ids
         self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
         self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
+        self.test_rabbitmq_thread = threading.Thread(target=self.subscribe)
         self.run_control()
+        self.start_time = 0
 
     def serve_client(self, conn):
         fec_id = None
@@ -82,6 +84,12 @@ class ControlServer:
                         self.vnf_list[json_data['user_id']] = json_data['data']
                     conn.send(json.dumps(dict(res=200)).encode())  # Success
                     self.notify_vnf_changes()
+                elif json_data['type'] == 'latency':
+                    json_data[0] = json_data['data']
+                    json_data[1] = time.time()
+                    self.publish('latency', json.dumps(json_data))
+                    logger.info('Sent latency message to RabbitMQ')
+
             except TypeError as e:
                 logger.error('[!] TypeError in control! ' + str(e))
                 conn.send(json.dumps(dict(res=404)).encode())  # Error
@@ -151,7 +159,7 @@ class ControlServer:
             channel = rabbit_conn.channel()
 
             channel.exchange_declare(exchange=general['control_exchange_name'], exchange_type='direct')
-
+            self.start_time = time.time()
             channel.basic_publish(
                 exchange=general['control_exchange_name'], routing_key=key, body=message)
             logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
@@ -186,6 +194,7 @@ class ControlServer:
             server_socket.listen(1)
 
             logger.warning('[I] Control server started')
+            self.test_rabbitmq_thread.start()
 
             # Infinite loop listening for new connections
             while True:
@@ -211,6 +220,24 @@ class ControlServer:
         with open('/home/user/Downloads/prometheus-2.51.2.linux-amd64/targets.json', 'w') as json_file:
             json.dump(prom_target, json_file, indent=4)
         json_file.close()
+
+    def subscribe(self):
+        rabbit_conn_down = pika.BlockingConnection(pika.ConnectionParameters("10.2.20.1",
+                                                                             credentials=pika.PlainCredentials(
+                                                                                 "sergi",
+                                                                                 "EETAC2023")))
+        channel_down = rabbit_conn_down.channel()
+        channel_down.exchange_declare(exchange='test', exchange_type='direct')
+        result = channel_down.queue_declare(queue='', exclusive=True)
+        queue_name = result.method.queue
+        channel_down.queue_bind(exchange='test', queue=queue_name, routing_key='latency')
+
+        def callback(ch, method, properties, body):
+            start_time1 = float(json.loads(body.decode('utf-8'))['1'])
+            print(f"Time elapsed for specific message is {(time.time() - start_time1) * 1000:.3f} ms")
+
+        channel_down.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
+        channel_down.start_consuming()
 
 
 if __name__ == '__main__':
