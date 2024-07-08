@@ -4,10 +4,10 @@ import threading
 import socket
 import json
 import time
-import pika
 import ctypes
 from colorlog import ColoredFormatter
 import configparser
+import zmq
 
 class ControlServer:
     def __init__(self, valid_ids):
@@ -16,6 +16,8 @@ class ControlServer:
         self.valid_ids = valid_ids
         self.listen_fec_changes_thread = threading.Thread(target=self.listen_fec_changes)
         self.listen_vnf_changes_thread = threading.Thread(target=self.listen_vnf_changes)
+        self.context = zmq.Context()
+        self.zero_conn = self.context.socket(zmq.PUB)
         self.run_control()
 
     def serve_client(self, conn):
@@ -143,24 +145,13 @@ class ControlServer:
                 self.publish('vnf', json.dumps(self.vnf_list))
 
     def publish(self, key, message):
-        rabbit_conn = pika.BlockingConnection(pika.ConnectionParameters(general['control_ip'],
-                                                                        credentials=pika.PlainCredentials(
-                                                                            general['control_username'],
-                                                                            general['control_password'])))
-        try:
-            channel = rabbit_conn.channel()
-
-            channel.exchange_declare(exchange=general['control_exchange_name'], exchange_type='direct')
-
-            channel.basic_publish(
-                exchange=general['control_exchange_name'], routing_key=key, body=message)
-            logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
-        except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            logger.exception(e)
-        finally:
-            rabbit_conn.close()
+        combined_dict = {
+            "key": key,
+            "body": message
+        }
+        combined_json = json.dumps(combined_dict, indent=None)
+        self.zero_conn.send_json(combined_json)
+        logger.debug("[D] Published message. Key: " + key + ". Message: " + message)
 
     def kill_thread(self, thread_id):
         ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), ctypes.py_object(SystemExit))
@@ -178,12 +169,17 @@ class ControlServer:
             # Server's IP and port
             host = general['control_ip']
             port = int(general['server_port'])
+            zero_port = general['zeromq_port']
 
             server_socket = socket.socket()  # Create socket
             server_socket.bind((host, port))  # Bind IP address and port together
 
             # Configure how many client the server can listen simultaneously
             server_socket.listen(1)
+
+            address = "tcp://" + host + ":" + zero_port
+            self.zero_conn.bind(address)
+            time.sleep(0.5)
 
             logger.warning('[I] Control server started')
 
@@ -195,6 +191,8 @@ class ControlServer:
                 socket_thread.start()
         except KeyboardInterrupt:
             logger.warning('[!] Stopping Control server...')
+            self.zero_conn.close()
+            self.context.term()
             stop = True
             for fec in self.fec_list:
                 fec['sock'].close()
